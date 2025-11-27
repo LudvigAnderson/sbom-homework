@@ -8,7 +8,7 @@
 ## How to Run
 
 ```bash
-python sbom.py /path/to/repos/
+python sbom.py /path/to/repos
 ```
 
 ### Arguments
@@ -17,7 +17,7 @@ python sbom.py /path/to/repos/
     Example: `/path/to/repos` is a folder containing folders that represent git repositories.
 
     ```markdown
-    /path/to/repos
+    📁 /path/to/repos
     ├─ 📁 repo1
     │   └─ 📄 requirements.txt
     └─ 📁 repo2
