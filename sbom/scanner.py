@@ -104,39 +104,6 @@ class DependencyScanner:
         
         return dependency_set
     
-    def _parse_package(self, package: dict, path: Path) -> set[DependencyRecord]:
-        """Parse dependencies from a package.json object.
-
-        Args:
-            package (dict): Parsed package.json data.
-            path (Path): Path to the package.json file.
-
-        Returns:
-            set[DependencyRecord]: Set of npm dependencies.
-        """
-        dependencies = {
-            DependencyRecord(
-                name=name,
-                version=version,
-                type="npm",
-                path=path,
-                dev=False
-            )
-            for name, version in package["dependencies"].items()
-        }
-        dev_dependencies = {
-            DependencyRecord(
-                name=name,
-                version=version,
-                type="npm",
-                path=path,
-                dev=True
-            )
-            for name, version in package.get("devDependencies", {}).items() # default to empty dict
-        }
-        
-        return dependencies | dev_dependencies
-    
     def _parse_package_lock_json(self, package_lock_json: Path) -> set[DependencyRecord]:
         """Parse an npm package-lock.json file into dependency records.
 
@@ -147,7 +114,6 @@ class DependencyScanner:
             set[DependencyRecord]: Set of npm dependencies.
 
         Raises:
-            NotImplementedError: If lockfileVersion 1 or 2 is encountered.
             ValueError: If lockfileVersion is unsupported.
         """
         with open(package_lock_json, "r", encoding="utf-8") as f:
@@ -155,8 +121,28 @@ class DependencyScanner:
             lockfile_version = data["lockfileVersion"]
 
             if lockfile_version in {1, 2}:
-                # CAN PROBABLY IMPLEMENT, FOUND AN EXAMPLE, BOOKMARKED IT
-                raise NotImplementedError(f"Parsing of package-lock.json files with lockfileVersion {lockfile_version} is not yet implemented.")
+                # v2 is backwards-compatible with v1 according to https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json
+                deps: set[DependencyRecord] = set()
+
+                def _walk_dependencies(dep_dict: dict, dev_flag: bool = False):
+                    for name, info in dep_dict.items():
+                        dep_dev = info.get("dev", dev_flag)
+                        dep_version = info.get("version")
+                        deps.add(DependencyRecord(
+                            name=name,
+                            version=dep_version,
+                            type="npm",
+                            path=package_lock_json,
+                            dev=dep_dev
+                        ))
+                        dep_deps = info.get("dependencies", {})
+                        _walk_dependencies(dep_deps, dev_flag=dep_dev)
+
+                top_level_deps = data.get("dependencies", {})
+                _walk_dependencies(top_level_deps)
+
+                return deps
+            
             elif lockfile_version == 3:
                 packages = data["packages"]
                 return {
@@ -184,7 +170,28 @@ class DependencyScanner:
         """
         with open(package_json, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return self._parse_package(package=data, path=package_json)
+            dependencies = {
+                DependencyRecord(
+                    name=name,
+                    version=version,
+                    type="npm",
+                    path=package_json,
+                    dev=False
+                )
+                for name, version in data["dependencies"].items()
+            }
+            dev_dependencies = {
+                DependencyRecord(
+                    name=name,
+                    version=version,
+                    type="npm",
+                    path=package_json,
+                    dev=True
+                )
+                for name, version in data.get("devDependencies", {}).items() # default to empty dict
+            }
+            
+            return dependencies | dev_dependencies
 
 
 
@@ -210,7 +217,7 @@ class DependencyScanner:
             # Prefer parsing package-lock.json
             try:
                 return self._parse_package_lock_json(package_lock_json)
-            except NotImplementedError:
+            except ValueError:
                 logger.warning(f"Parsing of package-lock.json failed due to unsupported lockfileVersion: {package_lock_json}")
         if package_json is not None:
             # Otherwise, parse package.json

@@ -165,6 +165,50 @@ class TestDependencyScanner(unittest.TestCase):
                 self.assertEqual(dep.type, "npm")
             elif dep.name in {"django", "scikit-learn"}:
                 self.assertEqual(dep.type, "pip")
+
+    def test_reads_package_lock_1(self):
+        """Scanner reads dependencies from a package-lock.json file with lockfileVersion 1.
+        
+        Because v2 is backwards-compatible with v1, this test is valid for v2 as well.
+        """
+        deps = self._get_dependencies_from_structure({
+            "repo1": {
+                "package-lock.json": """{
+                    "name": "test-package",
+                    "version": "0.0.2",
+                    "lockfileVersion": 1,
+                    "requires": true,
+                    "dependencies": {
+                        "@dev-tools/testing": {
+                            "version": "7.5.5",
+                            "dev": true
+                        },
+                        "some-dep": {
+                            "version": "6.1.0",
+                            "dependencies": {
+                                "recursive-dep": {
+                                    "version": "4.12.1"
+                                }
+                            }
+                        }
+                    }
+                }"""
+            }
+        })
+
+        dep_names = {d.name for d in deps}
+        self.assertEqual(dep_names, {"@dev-tools/testing", "some-dep", "recursive-dep"})
+
+        for dep in deps:
+            if dep.name == "@dev-tools/testing":
+                self.assertEqual(dep.version, "7.5.5")
+                self.assertTrue(dep.dev)
+            elif dep.name == "some-dep":
+                self.assertEqual(dep.version, "6.1.0")
+                self.assertFalse(dep.dev)
+            elif dep.name == "recursive-dep":
+                self.assertEqual(dep.version, "4.12.1")
+                self.assertFalse(dep.dev)
     
     def test_reads_package_lock_3(self):
         """Scanner reads dependencies from a package-lock.json file with lockfileVersion 3."""
