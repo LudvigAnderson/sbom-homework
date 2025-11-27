@@ -45,4 +45,4 @@ python sbom.py /path/to/repos/
 - To find vulnerabilities, I could use the API of some vulnerability database like Google's OSV: https://google.github.io/osv.dev/api/
 - Generate an HTML file that allows for easy filtering and sorting of the SBOM.
 - Add support for dependencies for different programming languages.
-- Find indirect dependencies for the Python dependencies.
+- Find indirect dependencies for the Python dependencies as well.
