@@ -62,9 +62,27 @@ def parse_args() -> argparse.Namespace:
             documenting the dependencies of all the repositories.
         """).strip()
     )
-    parser.add_argument("directory", type=existing_dir, help="Path to the directory containing repositories")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output (show DEBUG messages)")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress most output (show only WARNING or higher messages)")
+    parser.add_argument(
+        "directory",
+        type=existing_dir,
+        help="Path to the directory containing repositories"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose output (show DEBUG messages)"
+    )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress most output (show only WARNING or higher messages)"
+    )
+    parser.add_argument(
+        "-o", "--output-dir",
+        type=str,
+        default=None,
+        help="Directory where SBOM files will be saved (default: current directory)"
+    )
     
     return parser.parse_args()
 
@@ -72,11 +90,12 @@ def parse_args() -> argparse.Namespace:
 def main(args: argparse.Namespace) -> int:
     try:
         directory = args.directory
+        output_dir = args.output_dir
 
         scanner = DependencyScanner(directory)
         deps = scanner.get_dependencies()
 
-        writer = SBOMWriter()
+        writer = SBOMWriter(output_dir)
         writer.write_sbom(deps)
         return 0
     except Exception as e:
