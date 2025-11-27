@@ -99,7 +99,7 @@ class DependencyScanner:
                     name=name,
                     version=version, 
                     type="pip",
-                    path=requirements_txt
+                    path=requirements_txt.absolute()
                 ))
         
         return dependency_set
@@ -132,7 +132,7 @@ class DependencyScanner:
                             name=name,
                             version=dep_version,
                             type="npm",
-                            path=package_lock_json,
+                            path=package_lock_json.absolute(),
                             dev=dep_dev
                         ))
                         dep_deps = info.get("dependencies", {})
@@ -150,7 +150,7 @@ class DependencyScanner:
                         name=name.split("node_modules/")[-1],
                         version=info.get("version"),
                         type="npm",
-                        path=package_lock_json,
+                        path=package_lock_json.absolute(),
                         dev=info.get("dev", False)
                     )
                     for name, info in packages.items()
@@ -175,7 +175,7 @@ class DependencyScanner:
                     name=name,
                     version=version,
                     type="npm",
-                    path=package_json,
+                    path=package_json.absolute(),
                     dev=False
                 )
                 for name, version in data["dependencies"].items()
@@ -185,7 +185,7 @@ class DependencyScanner:
                     name=name,
                     version=version,
                     type="npm",
-                    path=package_json,
+                    path=package_json.absolute(),
                     dev=True
                 )
                 for name, version in data.get("devDependencies", {}).items() # default to empty dict

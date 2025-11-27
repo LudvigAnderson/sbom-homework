@@ -55,7 +55,7 @@ class SBOMWriter:
             output_dir (Path | None): Optional directory to override the default.
         """
         filepath = self._resolve_filepath("sbom.csv", output_dir)
-        logger.info(f"Writing CSV SBOM to {filepath}")
+        logger.info(f"Writing CSV SBOM to {filepath.absolute()}")
 
         fieldnames = [f.name for f in fields(DependencyRecord)]
 
