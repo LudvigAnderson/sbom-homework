@@ -9,3 +9,4 @@ class DependencyRecord:
     type: Literal["pip", "npm"]
     path: Path
     dev: bool = False # Default: not a dev dependency
+    git_commit: str | None = None

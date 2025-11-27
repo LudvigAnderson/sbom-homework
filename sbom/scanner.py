@@ -1,5 +1,7 @@
 from pathlib import Path
 import json
+import subprocess
+import dataclasses
 
 from sbom.models import DependencyRecord
 
@@ -33,13 +35,46 @@ class DependencyScanner:
         self.root_directory = Path(root_directory) # works for both str and Path
         self.dependencies: set[DependencyRecord] | None = None
 
+    def _get_git_commit(self, repo: Path) -> str | None:
+        """Return the latest Git commit hash (HEAD) for the given repository.
+
+        Args:
+            repo (Path): Path to the repository.
+
+        Returns:
+            str | None: Full commit hash, or None if the repository is not
+            a Git repo, empty, or Git is not installed.
+        """
+        try:
+            result = subprocess.check_output(
+                ["git", "-C", repo, "log", "--format=%H", "-n", "1"],
+                stderr=subprocess.STDOUT
+            )
+            return result.decode().strip()
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Git command failed for repo {repo}: {e}")
+            return None
+        except FileNotFoundError as e:
+            logger.warning("Git executable not found. Is Git installed?")
+            return None
+
     def _is_dependency_file(self, entry: Path) -> bool:
+        """Check if a file is a recognized dependency file."""
         return entry.name in self._DEPENDENCY_FILENAMES
     
     def _find_dependency_files(self, repo: Path) -> dict[str, Path]:
+        """Find dependency files in the given repository."""
         return {entry.name: entry for entry in repo.iterdir() if self._is_dependency_file(entry)}
 
     def _parse_python_dependencies(self, requirements_txt: Path) -> set[DependencyRecord]:
+        """Parse a Python requirements.txt file into dependency records.
+
+        Args:
+            requirements_txt (Path): Path to the requirements.txt file.
+
+        Returns:
+            set[DependencyRecord]: Set of parsed Python dependencies.
+        """
         dependency_set = set()
         operators = ("==", ">=", "<=", "!=", "~=", ">", "<")
         
@@ -70,6 +105,15 @@ class DependencyScanner:
         return dependency_set
     
     def _parse_package(self, package: dict, path: Path) -> set[DependencyRecord]:
+        """Parse dependencies from a package.json object.
+
+        Args:
+            package (dict): Parsed package.json data.
+            path (Path): Path to the package.json file.
+
+        Returns:
+            set[DependencyRecord]: Set of npm dependencies.
+        """
         dependencies = {
             DependencyRecord(
                 name=name,
@@ -94,6 +138,18 @@ class DependencyScanner:
         return dependencies | dev_dependencies
     
     def _parse_package_lock_json(self, package_lock_json: Path) -> set[DependencyRecord]:
+        """Parse an npm package-lock.json file into dependency records.
+
+        Args:
+            package_lock_json (Path): Path to package-lock.json.
+
+        Returns:
+            set[DependencyRecord]: Set of npm dependencies.
+
+        Raises:
+            NotImplementedError: If lockfileVersion 1 or 2 is encountered.
+            ValueError: If lockfileVersion is unsupported.
+        """
         with open(package_lock_json, "r", encoding="utf-8") as f:
             data = json.load(f)
             lockfile_version = data["lockfileVersion"]
@@ -118,6 +174,14 @@ class DependencyScanner:
                 raise ValueError(f"Unsupported package-lock.json lockfileVersion: {lockfile_version}")
 
     def _parse_package_json(self, package_json: Path) -> set[DependencyRecord]:
+        """Parse an npm package.json file into dependency records.
+
+        Args:
+            package_json (Path): Path to package.json.
+
+        Returns:
+            set[DependencyRecord]: Set of npm dependencies.
+        """
         with open(package_json, "r", encoding="utf-8") as f:
             data = json.load(f)
             return self._parse_package(package=data, path=package_json)
@@ -131,6 +195,17 @@ class DependencyScanner:
             package_json: Path | None = None,
             package_lock_json: Path | None = None
     ) -> set[DependencyRecord]:
+        """Parse JavaScript dependencies from package.json or package-lock.json.
+
+        Prefers parsing package-lock.json if provided.
+
+        Args:
+            package_json (Path | None): Optional package.json path.
+            package_lock_json (Path | None): Optional package-lock.json path.
+
+        Returns:
+            set[DependencyRecord]: Set of JavaScript dependencies.
+        """
         if package_lock_json is not None:
             # Prefer parsing package-lock.json
             try:
@@ -142,10 +217,19 @@ class DependencyScanner:
             return self._parse_package_json(package_json)
             
     def _scan_repo(self, repo: Path) -> set[DependencyRecord]:
+        """Scan a repository for dependency files and parse them.
+
+        Args:
+            repo (Path): Path to the repository.
+
+        Returns:
+            set[DependencyRecord]: All dependencies found in the repository.
+        """
         dependency_files = self._find_dependency_files(repo)
         requirements_txt = dependency_files.get("requirements.txt")
         package_lock_json = dependency_files.get("package-lock.json")
         package_json = dependency_files.get("package.json")
+
 
         repo_dependencies = set()
 
@@ -160,11 +244,18 @@ class DependencyScanner:
             )
             repo_dependencies.update(javascript_dependencies)
         
-        return repo_dependencies
-
-
+        # Add the git commit column to all the dependencies.
+        # Need to use dataclasses.replace because DependencyRecord is immutable.
+        git_commit = self._get_git_commit(repo)
+        return {dataclasses.replace(dep, git_commit=git_commit) for dep in repo_dependencies}
 
     def scan(self) -> None:
+        """Scan all repositories under the root directory for dependencies.
+
+        Raises:
+            NoRepositoriesFoundError: If no subdirectories are found.
+            NoDependenciesFoundError: If no dependencies are found in any repository.
+        """
         repos = [entry for entry in self.root_directory.iterdir() if entry.is_dir()]
         if not repos:
             raise NoRepositoriesFoundError(f"No repositories were found in {self.root_directory}.")
@@ -183,6 +274,11 @@ class DependencyScanner:
             raise NoDependenciesFoundError(f"No dependencies found in repositories in {self.root_directory}.")
 
     def get_dependencies(self) -> set[DependencyRecord]:
+        """Return all dependencies found by the scanner, scanning if necessary.
+
+        Returns:
+            set[DependencyRecord]: All dependencies in scanned repositories.
+        """
         if self.dependencies is None:
             self.scan()
         

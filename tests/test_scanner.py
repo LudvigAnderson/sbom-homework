@@ -1,5 +1,7 @@
-import unittest
+import subprocess
 import tempfile
+import unittest
+from unittest.mock import patch
 from pathlib import Path
 from contextlib import contextmanager
 from typing import TypeAlias, Union, Iterator
@@ -10,6 +12,13 @@ from sbom.scanner import DependencyScanner, NoDependenciesFoundError
 FileStructure: TypeAlias = dict[str, Union[str, "FileStructure"]]
 
 class TestDependencyScanner(unittest.TestCase):
+    def setUp(self):
+        # This turns off warning logging, because otherwise,
+        # a warning about missing git commit will be logged for every test.
+        patcher = patch("sbom.scanner.logger.warning")
+        self.mock_logger = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @contextmanager
     def _create_temp_fs(self, structure: FileStructure) -> Iterator[Path]:
         """Create a temporary file/folder structure for testing.
@@ -209,3 +218,24 @@ class TestDependencyScanner(unittest.TestCase):
                 self.assertEqual(dep.version, "2.3.4")
                 self.assertTrue(dep.dev)
 
+    def test_get_git_commit_mocked(self):
+        """Returns a fake commit hash using a mock."""
+        tmp = Path("/fake/repo")  # any path works, doesn’t have to exist
+        scanner = DependencyScanner(tmp)
+
+        # make subprocess.check_output output a predetermined string
+        fake_output = b"abcdef1234567890abcdef1234567890abcdef12\n"
+        with patch("subprocess.check_output", return_value=fake_output) as mock_sub:
+            commit = scanner._get_git_commit(tmp)
+            mock_sub.assert_called_once_with(
+                ["git", "-C", tmp, "log", "--format=%H", "-n", "1"],
+                stderr=subprocess.STDOUT
+            )
+
+            deps = self._get_dependencies_from_structure({
+                "repo1": {"requirements.txt": "flask"}
+            })
+            dep = next(iter(deps))
+
+        self.assertEqual(dep.git_commit, "abcdef1234567890abcdef1234567890abcdef12")
+        self.assertEqual(commit, "abcdef1234567890abcdef1234567890abcdef12")
